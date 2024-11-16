@@ -13,6 +13,10 @@ from datetime import timedelta
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -21,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-75%w5w1%q^+h*_u36p&3&ksvwf!a40xk8-ynz@al(8#qpn*n=h'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -193,11 +197,7 @@ EMAIL_HOST_PASSWORD = 'jcpa qsfz qiir qxvc'  # Your Gmail password or app-specif
 DEFAULT_FROM_EMAIL = 'philemoncobbina19@gmail.com'  # Your Gmail address for sending emails 
    """
 
-import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
 
 # Get environment variables
 BREVO_API_KEY = os.getenv('BREVO_API_KEY')
