@@ -191,10 +191,6 @@ BREVO_API_KEY = os.getenv('BREVO_API_KEY')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
 IPINFO_API_KEY = os.getenv('IPINFO_API_KEY')
 
-# Print the environment variables
-print(f"BREVO_API_KEY: {BREVO_API_KEY}")
-print(f"DEFAULT_FROM_EMAIL: {DEFAULT_FROM_EMAIL}")
-print(f"IPINFO_API_KEY: {IPINFO_API_KEY}")
 
 
 AUTH_USER_MODEL = 'authapp.CustomUser'
