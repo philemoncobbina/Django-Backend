@@ -193,10 +193,21 @@ EMAIL_HOST_PASSWORD = 'jcpa qsfz qiir qxvc'  # Your Gmail password or app-specif
 DEFAULT_FROM_EMAIL = 'philemoncobbina19@gmail.com'  # Your Gmail address for sending emails 
    """
 
-# Brevo API settings
-BREVO_API_KEY = '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'
-DEFAULT_FROM_EMAIL = 'philemoncobbina19@gmail.com'  # Update with your Brevo verified sender email
+import os
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Get environment variables
+BREVO_API_KEY = os.getenv('BREVO_API_KEY')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+IPINFO_API_KEY = os.getenv('IPINFO_API_KEY')
+
+# Print the environment variables
+print(f"BREVO_API_KEY: {BREVO_API_KEY}")
+print(f"DEFAULT_FROM_EMAIL: {DEFAULT_FROM_EMAIL}")
+print(f"IPINFO_API_KEY: {IPINFO_API_KEY}")
 
 
 AUTH_USER_MODEL = 'authapp.CustomUser'
@@ -213,4 +224,4 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
 
 
-IPINFO_API_KEY = '2237264a354692'
+
