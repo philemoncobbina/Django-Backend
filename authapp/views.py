@@ -163,6 +163,25 @@ class VerifyEmailView(APIView):
             return Response({'error': 'Invalid activation link.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+
+
+import threading
+import requests
+import platform
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import login
+from django.contrib.auth.hashers import check_password
+from django.template.loader import render_to_string
+from django.urls import reverse
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
+from sib_api_v3_sdk import TransactionalEmailsApi, SendSmtpEmail, Configuration, ApiClient
+from sib_api_v3_sdk.rest import ApiException
+
+# Helper functions
 def get_ip_address():
     try:
         ip_response = requests.get('https://api.ipify.org?format=json')
@@ -175,9 +194,12 @@ def get_ip_address():
 
 def get_location_info(ip_address):
     try:
+        if ip_address == "N/A":
+            return None
         geo_response = requests.get(f'https://ipapi.co/{ip_address}/json/')
         geo_data = geo_response.json()
         if geo_response.status_code == 200:
+            print(f"Geolocation data fetched for IP {ip_address}")
             return geo_data
         else:
             print(f"Could not fetch geolocation data for IP: {ip_address}")
@@ -188,19 +210,23 @@ def get_location_info(ip_address):
 
 def get_country_details(country_code):
     try:
+        if not country_code:
+            return None
         countries_response = requests.get('https://restcountries.com/v3.1/all')
         countries_data = countries_response.json()
         country_dict = {country.get('cca2'): country for country in countries_data}
         if country_code in country_dict:
+            country = country_dict[country_code]
             return {
-                "name": country_dict[country_code].get('name', {}).get('common'),
-                "capital": country_dict[country_code].get('capital', [None])[0],
-                "region": country_dict[country_code].get('region'),
-                "subregion": country_dict[country_code].get('subregion'),
-                "population": country_dict[country_code].get('population'),
-                "area": country_dict[country_code].get('area'),
+                "name": country.get('name', {}).get('common'),
+                "capital": country.get('capital', [None])[0],
+                "region": country.get('region'),
+                "subregion": country.get('subregion'),
+                "population": country.get('population'),
+                "area": country.get('area'),
             }
         else:
+            print(f"Country code {country_code} not found.")
             return None
     except Exception as e:
         print(f"Could not fetch country details: {e}")
@@ -208,12 +234,10 @@ def get_country_details(country_code):
 
 def send_login_email(user, request, ip_address, city, country_name, device_os, device_name):
     try:
-        # Prepare email content for login alert using the template
         verification_token = RefreshToken.for_user(user).access_token
         verification_url = reverse('verify-email', kwargs={'user_id': user.id, 'token': str(verification_token)})
         verification_url = request.build_absolute_uri(verification_url)
 
-        # Render the HTML content from the template
         context = {
             'verification_url': verification_url,
             'first_name': user.first_name,
@@ -225,7 +249,6 @@ def send_login_email(user, request, ip_address, city, country_name, device_os, d
         }
         html_content = render_to_string('login_alert.html', context)
 
-        # Brevo email sending logic
         configuration = Configuration()
         configuration.api_key['api-key'] = settings.BREVO_API_KEY
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
@@ -237,13 +260,13 @@ def send_login_email(user, request, ip_address, city, country_name, device_os, d
             html_content=html_content
         )
 
-        # Send email
         api_instance.send_transac_email(send_smtp_email)
         print(f"Email sent successfully to: {user.email}")
-
     except ApiException as e:
         print(f"Error sending email to {user.email}: {e}")
 
+# Login View
+# Updated Login View
 class LoginView(APIView):
     def post(self, request):
         email = request.data.get('email')
@@ -256,65 +279,47 @@ class LoginView(APIView):
         except CustomUser.DoesNotExist:
             print(f"User not found with email: {email}")
             return Response({'error': 'Incorrect username or password.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # Check if the user has a defined role
-        if user.role:
-            print(f"Access denied for user with role: {user.role}")
-            return Response({'error': 'You are not authorized to access this system.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Check if the user is blocked
         if user.is_blocked:
-            print(f"User is blocked: {user.email}")
-            return Response({'error': 'Your account has been blocked. Please contact support for assistance.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'Your account has been blocked.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Check if the user is active
         if not user.is_active:
-            print(f"User is not active: {user.email}")
-            return Response({'error': 'Account not verified. Please check your email for the verification link.'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'Account not verified.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Check if the password matches
         if check_password(password, user.password):
-            print(f"Password check passed for user: {user.email}")
             login(request, user)
             refresh = RefreshToken.for_user(user)
 
-            # Get the IP address and other details asynchronously
+            # Fetch IP address and device information
             ip_address = get_ip_address() or 'N/A'
-            city = 'N/A'
-            country_code = 'N/A'
-            device_os = platform.system()  # OS name
-            device_name = platform.node()  # Hostname / Network name
+            device_os = platform.system()
+            device_name = platform.node()
 
-            # Asynchronously run the tasks
             def async_task():
+                city = "N/A"
+                country_name = "N/A"
                 location_info = get_location_info(ip_address)
+
                 if location_info:
                     city = location_info.get('city', 'N/A')
-                    country_code = location_info.get('country', 'N/A')
+                    country_code = location_info.get('country', None)
+                    country_details = get_country_details(country_code)
+                    country_name = country_details['name'] if country_details else "N/A"
 
-                country_details = get_country_details(country_code)
-                country_name = country_details['name'] if country_details else 'N/A'
-
-                # Call the function to send the login email
                 send_login_email(user, request, ip_address, city, country_name, device_os, device_name)
 
-            # Run async task in a separate thread
             threading.Thread(target=async_task).start()
+
+            # Serialize user details
+            user_data = CustomUserSerializer(user).data
 
             return Response({
                 'access_token': str(refresh.access_token),
                 'refresh_token': str(refresh),
-                'user': {
-                    'id': user.id,
-                    'email': user.email,
-                    'role': user.role
-                }
-            })
+                'user': user_data,
+            }, status=status.HTTP_200_OK)
         else:
-            print(f"Password check failed for user: {email}")
             return Response({'error': 'Incorrect username or password.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
-
 
             
 class PasswordResetView(APIView):
