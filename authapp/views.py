@@ -33,12 +33,36 @@ import platform
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from authapp.models import CustomUser
-from authapp.serializers import CustomUserSerializer
+from .serializers import CustomUserSerializer, GoogleSignInSerializer
 from django.core.exceptions import ObjectDoesNotExist
-
-
-
+from rest_framework_social_oauth2.views import ConvertTokenView
+from social_django.utils import load_strategy, load_backend
+from social_core.backends.google import GoogleOAuth2
+from social_core.exceptions import AuthException
+from google.oauth2 import id_token
+import threading
+import requests
+import platform
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import login
+from django.contrib.auth.hashers import check_password
+from django.template.loader import render_to_string
+from django.urls import reverse
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
+from sib_api_v3_sdk import TransactionalEmailsApi, SendSmtpEmail, Configuration, ApiClient
+from sib_api_v3_sdk.rest import ApiException
+from django.db import IntegrityError
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2 import id_token
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .models import CustomUser
+from .serializers import GoogleSignInSerializer
 from .serializers import CustomUserSerializer
+from google.auth.transport import requests as google_requests
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -163,24 +187,201 @@ class VerifyEmailView(APIView):
             return Response({'error': 'Invalid activation link.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
-
-import threading
 import requests
-import platform
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.auth import login
-from django.contrib.auth.hashers import check_password
-from django.template.loader import render_to_string
-from django.urls import reverse
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.conf import settings
-from sib_api_v3_sdk import TransactionalEmailsApi, SendSmtpEmail, Configuration, ApiClient
-from sib_api_v3_sdk.rest import ApiException
+from django.contrib.auth import get_user_model
+from .serializers import GoogleSignInSerializer
 
+from django.utils import timezone
+
+class GoogleSignInView(APIView):
+    def post(self, request):
+        print("=== START GOOGLE SIGN-IN PROCESS ===")
+        print("Received request data:", request.data)
+
+        serializer = GoogleSignInSerializer(data=request.data)
+        if serializer.is_valid():
+            access_token = serializer.validated_data['access_token']
+            print("✅ Access token received:", access_token)
+
+            try:
+                # Step 1: Verify ID Token
+                id_token_info = self.get_id_token_from_access_token(access_token)
+                if id_token_info:
+                    print("✅ ID Token Info:", id_token_info)
+                    email = id_token_info.get('email')
+                    print("📧 Email extracted:", email)
+
+                    if not email:
+                        print("❌ ERROR: No email found in token")
+                        return Response({
+                            'success': False,
+                            'error': 'Email not found in token'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Step 2: Fetch User Profile with Multiple Methods
+                    user_profile = self.get_user_profile_from_google(access_token)
+                    print("👤 User Profile Fetched:", user_profile)
+
+                    # Comprehensive Name Extraction
+                    first_name = (
+                        user_profile.get('given_name') or 
+                        user_profile.get('first_name') or 
+                        (user_profile.get('names', [{}])[0] if user_profile.get('names') else {}).get('givenName', '') or 
+                        ''
+                    )
+                    last_name = (
+                        user_profile.get('family_name') or 
+                        user_profile.get('last_name') or 
+                        (user_profile.get('names', [{}])[0] if user_profile.get('names') else {}).get('familyName', '') or 
+                        ''
+                    )
+
+                    print(f"👥 Extracted Names - First: '{first_name}', Last: '{last_name}'")
+
+                    # Use the custom user model
+                    User = get_user_model()
+                    user, created = User.objects.get_or_create(email=email)
+
+                    if created:
+                        print("🆕 New user created")
+                        user.is_google_account = True
+                        user.is_active = True
+                        user.is_blocked = False
+                        user.date_joined = timezone.now()  # Set the date_joined field
+                        user.save()
+                        print(f"👤 User created with Date Joined: '{user.date_joined}'")
+                    
+                    # Update the first and last name regardless of whether the user was newly created
+                    user.first_name = first_name
+                    user.last_name = last_name
+                    user.last_login = timezone.now()  # Update last_login time on each login
+                    user.save()
+                    print(f"👤 User saved with First Name: '{user.first_name}', Last Name: '{user.last_name}', Last Login: '{user.last_login}'")
+
+                    # Additional User Checks
+                    if user.is_blocked:
+                        print("🚫 User account is blocked")
+                        return Response({
+                            'success': False,
+                            'error': 'User account is blocked. Please contact support.'
+                        }, status=status.HTTP_403_FORBIDDEN)
+
+                    if not user.is_active:
+                        print("❌ User account is inactive")
+                        return Response({
+                            'success': False,
+                            'error': 'User account is inactive. Please verify your email or contact support.'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                        
+                    if not user.is_google_account:
+                        print("❌ Not a Google account")
+                        return Response({
+                            'success': False,
+                            'error': 'Account was not created with Gmail. Please login with your email and password'
+                        }, status=status.HTTP_403_FORBIDDEN)
+
+                    # Generate JWT tokens
+                    refresh = RefreshToken.for_user(user)
+                    print("🔑 JWT tokens generated successfully")
+
+                    return Response({
+                        'success': True,
+                        'email': email,
+                        'created': created,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'access': str(refresh.access_token),
+                        'refresh': str(refresh),
+                    })
+
+                else:
+                    print("❌ ERROR: Invalid or expired token")
+                    return Response({
+                        'success': False,
+                        'error': 'Invalid or expired token'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            except Exception as e:
+                print(f"❌ UNEXPECTED ERROR: {str(e)}")
+                return Response({
+                    'success': False,
+                    'error': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        print("❌ Serializer validation failed")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_id_token_from_access_token(self, access_token):
+        """
+        Exchange an access token for an ID token using Google's token info endpoint.
+        """
+        try:
+            print("🔍 Fetching ID token info...")
+            response = requests.get(
+                "https://www.googleapis.com/oauth2/v3/tokeninfo",
+                params={"access_token": access_token}
+            )
+            print(f"ID Token Response Status: {response.status_code}")
+            print(f"ID Token Response Content: {response.text}")
+            
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"❌ Error while fetching ID token: {e}")
+            return None
+
+    def get_user_profile_from_google(self, access_token):
+        """
+        Fetch user's profile from Google with multiple methods
+        """
+        print("🌐 Attempting to fetch user profile...")
+        
+        # Method 1: UserInfo Endpoint
+        try:
+            print("🔍 Trying UserInfo Endpoint...")
+            response = requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={
+                    'Authorization': f'Bearer {access_token}'
+                }
+            )
+            print(f"UserInfo Response Status: {response.status_code}")
+            print(f"UserInfo Response Content: {response.text}")
+            
+            if response.status_code == 200:
+                user_info = response.json()
+                print("✅ Successfully retrieved UserInfo")
+                return user_info
+        except Exception as e:
+            print(f"❌ UserInfo Endpoint Error: {e}")
+
+        # Method 2: People API
+        try:
+            print("🔍 Trying People API...")
+            response = requests.get(
+                "https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses",
+                headers={
+                    'Authorization': f'Bearer {access_token}'
+                }
+            )
+            print(f"People API Response Status: {response.status_code}")
+            print(f"People API Response Content: {response.text}")
+            
+            if response.status_code == 200:
+                people_data = response.json()
+                print("✅ Successfully retrieved People API data")
+                return people_data
+        except Exception as e:
+            print(f"❌ People API Error: {e}")
+
+        print("❌ Failed to retrieve user profile")
+        return {}
+      
 # Helper functions
 def get_ip_address():
     try:
@@ -266,7 +467,6 @@ def send_login_email(user, request, ip_address, city, country_name, device_os, d
         print(f"Error sending email to {user.email}: {e}")
 
 # Login View
-# Updated Login View
 class LoginView(APIView):
     def post(self, request):
         email = request.data.get('email')

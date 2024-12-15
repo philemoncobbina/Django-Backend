@@ -1,12 +1,14 @@
 from rest_framework import serializers
 from .models import CustomUser
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 class CustomUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ('id', 'email', 'first_name', 'last_name', 'password', 'is_active', 'is_blocked','date_joined' )
+        fields = ('id', 'email', 'first_name', 'last_name', 'password', 'is_active', 'is_blocked', 'date_joined')
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -15,6 +17,17 @@ class CustomUserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class GoogleSignInSerializer(serializers.Serializer):
+    access_token = serializers.CharField(required=True)
+
+    def validate_access_token(self, value):
+        if not value:
+            raise serializers.ValidationError("Access token is required.")
+        return value
+
+
 
 class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField()

@@ -46,6 +46,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     verification_code = models.CharField(max_length=6, null=True, blank=True)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)  # Add the role field
+    is_google_account = models.BooleanField(default=False)
 
     objects = CustomUserManager()
 

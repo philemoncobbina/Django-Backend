@@ -49,6 +49,7 @@ CSRF_TRUSTED_ORIGINS = [
 
 CORS_ORIGIN_ALLOW_ALL = True
 
+CORS_ALLOW_CREDENTIALS = True
 
 #LOGIN_REDIRECT_URL = '/'
 
@@ -62,6 +63,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django.contrib.sites',  # Make sure this is included
+    'allauth',
+    'allauth.account',
+    'oauth2_provider',
+    'social_django',
+    'rest_framework_social_oauth2',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
     'rest_framework_simplejwt',
     'authapp.apps.AuthappConfig',
     'corsheaders',
@@ -79,7 +88,7 @@ INSTALLED_APPS = [
     
 ]
 
-CORS_ALLOW_CREDENTIALS = True
+
 
 
 MEDIA_URL = '/media/'
@@ -87,7 +96,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Configure SimpleJWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=111),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,  # Make sure to keep this secret
@@ -99,6 +108,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -196,7 +206,30 @@ IPINFO_API_KEY = os.getenv('IPINFO_API_KEY')
 AUTH_USER_MODEL = 'authapp.CustomUser'
 
 
+AUTHENTICATION_BACKENDS = (
+    
+    
+    'django.contrib.auth.backends.ModelBackend',
+)
 
+SITE_ID = 1
+
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        },
+        'OAUTH_PKCE_ENABLED': True,  # Enable PKCE for better security
+    }
+}
+
+# Optionally configure email verification if needed
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # Or "optional"
+ACCOUNT_EMAIL_REQUIRED = True
 
 
 # Session expires after 7 hours (25200 seconds)
@@ -205,6 +238,5 @@ SESSION_COOKIE_AGE = 25200
 # Idle timeout of 1 hour (3600 seconds)
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
-
 
 
