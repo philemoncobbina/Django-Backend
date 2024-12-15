@@ -30,20 +30,26 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-fallback-key')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '13.60.29.130',  # Add your server's public IP address here
+    'yourdomain.com',  # If you have a domain, add it here
+]
+
 
 CORS_ALLOWED_ORIGINS = [
-    
-    'http://localhost:4200',
-    'http://localhost:5173',
-    
+    'http://localhost:4200',  # Localhost for frontend during dev
+    'http://localhost:5173',  # Another frontend URL
+    'http://13.60.29.130:8000',  # Add the public IP of the backend here
 ]
+
 
 # settings.py
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5174',  # Add your frontend URL here
-    # You can add more URLs as needed
+    'http://localhost:5174',
+    'http://13.60.29.130:8000',  # Add backend's IP or domain if CSRF is being sent from frontend
 ]
 
 
