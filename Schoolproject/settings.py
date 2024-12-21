@@ -33,8 +33,9 @@ DEBUG = True
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    '13.60.29.130',  # Add your server's public IP address here
-    'plvcmonline.uk',  # If you have a domain, add it here
+    '13.60.29.130', 
+    'plvcmonline.uk', 
+    'api.plvcmonline.uk'
 ]
 
 
