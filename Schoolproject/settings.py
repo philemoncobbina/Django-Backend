@@ -34,13 +34,14 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     '13.60.29.130',  # Add your server's public IP address here
-    'yourdomain.com',  # If you have a domain, add it here
+    'plvcmonline.uk',  # If you have a domain, add it here
 ]
 
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',  # Localhost for frontend during dev
-    'http://localhost:5173',  # Another frontend URL
+    'http://localhost:5173',
+    'https://plvcmonline.uk',  # Another frontend URL
     'http://13.60.29.130:8000',  # Add the public IP of the backend here
 ]
 
@@ -49,6 +50,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5174',
+    'https://plvcmonline.uk',
     'http://13.60.29.130:8000',  # Add backend's IP or domain if CSRF is being sent from frontend
 ]
 
@@ -90,6 +92,7 @@ INSTALLED_APPS = [
     'admin_auth',
     'hubtel',
     'rest_framework.authtoken',
+    'whitenoise',
     
     
 ]
@@ -115,7 +118,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
-    
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
