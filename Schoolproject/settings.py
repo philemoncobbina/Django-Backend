@@ -9,16 +9,28 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
+
 from datetime import timedelta
+
 from pathlib import Path
 import os
-
 from dotenv import load_dotenv
-
+env_path = Path(__file__).resolve().parent / '.env'
 # Load environment variables from .env file
-load_dotenv()
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+
+
+
+# Now you can use the environment variables
+BREVO_API_KEY = os.getenv('BREVO_API_KEY')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+IPINFO_API_KEY = os.getenv('IPINFO_API_KEY')
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Your remaining logic follows...
+
+
 
 
 # Quick-start development settings - unsuitable for production
@@ -207,10 +219,6 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Get environment variables
-BREVO_API_KEY = os.getenv('BREVO_API_KEY')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
-IPINFO_API_KEY = os.getenv('IPINFO_API_KEY')
 
 
 

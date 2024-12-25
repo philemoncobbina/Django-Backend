@@ -10,6 +10,10 @@ from sib_api_v3_sdk.api.transactional_emails_api import TransactionalEmailsApi
 from django.conf import settings
 from sib_api_v3_sdk.rest import ApiException
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from pathlib import Path
+import os
+from dotenv import load_dotenv
+
 
 
 class ReservationViewSet(viewsets.ModelViewSet):
@@ -38,7 +42,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
     def send_confirmation_email(self, reservation):
         configuration = Configuration()
-        configuration.api_key['api-key'] = settings.BREVO_API_KEY
+        configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
         
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
         

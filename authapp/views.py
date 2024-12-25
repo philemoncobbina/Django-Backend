@@ -63,6 +63,10 @@ from .models import CustomUser
 from .serializers import GoogleSignInSerializer
 from .serializers import CustomUserSerializer
 from google.auth.transport import requests as google_requests
+from pathlib import Path
+import os
+from dotenv import load_dotenv
+
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -135,7 +139,7 @@ class SignUpView(generics.CreateAPIView):
 
             # Brevo email sending logic
             configuration = Configuration()
-            configuration.api_key['api-key'] = settings.BREVO_API_KEY
+            configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
             api_instance = TransactionalEmailsApi(ApiClient(configuration))
 
             send_smtp_email = SendSmtpEmail(
@@ -451,7 +455,7 @@ def send_login_email(user, request, ip_address, city, country_name, device_os, d
         html_content = render_to_string('login_alert.html', context)
 
         configuration = Configuration()
-        configuration.api_key['api-key'] = settings.BREVO_API_KEY
+        configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
 
         send_smtp_email = SendSmtpEmail(

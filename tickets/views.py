@@ -11,6 +11,9 @@ from rest_framework import generics
 from sib_api_v3_sdk.rest import ApiException
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Max
+from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 class TicketViewSet(viewsets.ModelViewSet):
     queryset = Ticket.objects.all()
@@ -45,7 +48,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def send_ticket_confirmation_email(self, ticket):
         configuration = Configuration()
-        configuration.api_key['api-key'] = settings.BREVO_API_KEY
+        configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
 
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
 
@@ -68,8 +71,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         try:
             api_response = api_instance.send_transac_email(send_smtp_email)
             print("Confirmation email sent successfully:", api_response)
+            print(f"BREVO_API_KEY: {os.getenv('BREVO_API_KEY')}")
         except ApiException as e:
             print(f"Exception when sending email: {e}")
+            
+            
 
     def get_permissions(self):
         if self.action in ['update', 'partial_update']:
