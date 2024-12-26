@@ -36,3 +36,5 @@ env/
 *.key
 *.bak
 *.swp
+
+media/screenshots/*.jpg
