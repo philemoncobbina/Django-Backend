@@ -66,6 +66,15 @@ from google.auth.transport import requests as google_requests
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+import requests
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+from .serializers import GoogleSignInSerializer
+
+from django.utils import timezone
 
 
 User = get_user_model()
@@ -164,7 +173,7 @@ class VerifyEmailView(APIView):
         user = get_object_or_404(User, id=user_id)
 
         if user.is_active:
-            return redirect('http://localhost:5173/dashboard')  # Redirect to the dashboard if already verified
+            return redirect('https://plvcmonline.uk/dashboard')  # Redirect to the dashboard if already verified
 
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
@@ -180,7 +189,7 @@ class VerifyEmailView(APIView):
             user.is_active = True
             user.save()
 
-            return redirect('http://localhost:5173/dashboard')  # Redirect to the dashboard after successful verification
+            return redirect('https://plvcmonline.uk/dashboard')  # Redirect to the dashboard after successful verification
 
         except jwt.ExpiredSignatureError:
             logger.error("Activation link has expired.")
@@ -191,15 +200,7 @@ class VerifyEmailView(APIView):
             return Response({'error': 'Invalid activation link.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-import requests
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model
-from .serializers import GoogleSignInSerializer
 
-from django.utils import timezone
 
 class GoogleSignInView(APIView):
     def post(self, request):
