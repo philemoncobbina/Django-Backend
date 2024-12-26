@@ -1,19 +1,20 @@
 import logging
+import os
 from rest_framework import viewsets, status, generics
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Ticket, TicketLog
-from .serializers import TicketSerializer, TicketLogSerializer
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.utils import timezone
+from django.db.models import Max
+from django.conf import settings
+from pathlib import Path
+from dotenv import load_dotenv
 from sib_api_v3_sdk import Configuration, ApiClient, SendSmtpEmail
 from sib_api_v3_sdk.api.transactional_emails_api import TransactionalEmailsApi
-from django.conf import settings
 from sib_api_v3_sdk.rest import ApiException
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.db.models import Max
-from pathlib import Path
-import os
-from dotenv import load_dotenv
+
+from .models import Ticket, TicketLog
+from .serializers import TicketSerializer, TicketLogSerializer
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class TicketViewSet(viewsets.ModelViewSet):
     def create(self, request):
         logger.info("Attempting to create new ticket")
         try:
+            # Validate and create ticket
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
@@ -74,15 +76,20 @@ class TicketViewSet(viewsets.ModelViewSet):
     def send_ticket_confirmation_email(self, ticket):
         logger.info(f"Attempting to send confirmation email for ticket: {ticket.TicketID}")
         
-        # Safely check API key configuration
+        # Check for required environment variables
         brevo_api_key = os.getenv('BREVO_API_KEY')
+        sender_email = os.getenv('DEFAULT_FROM_EMAIL')
+        
         if not brevo_api_key:
             logger.error("BREVO_API_KEY not found in environment variables")
             raise ValueError("BREVO_API_KEY not configured")
-        else:
-            logger.info("BREVO_API_KEY successfully loaded from environment")
-            # Log a safe version of the key (first 4 chars only)
-            logger.debug(f"BREVO_API_KEY starts with: {brevo_api_key[:4]}***")
+        
+        if not sender_email:
+            logger.error("DEFAULT_FROM_EMAIL not found in environment variables")
+            raise ValueError("DEFAULT_FROM_EMAIL not configured")
+        
+        logger.info("Email configuration variables successfully loaded")
+        logger.debug(f"Using sender email: {sender_email}")
 
         try:
             configuration = Configuration()
@@ -91,16 +98,16 @@ class TicketViewSet(viewsets.ModelViewSet):
 
             send_smtp_email = SendSmtpEmail(
                 to=[{"email": ticket.email}],
-                sender={"name": "Support Team", "email": settings.DEFAULT_FROM_EMAIL},
+                sender={"name": "Support Team", "email": sender_email},  # Using email from environment variables
                 subject="Your Support Ticket ID",
                 html_content=f"""
                 <html>
-                <body>
-                    <p>Dear {ticket.full_name},</p>
-                    <p>Your ticket ID is <strong>{ticket.TicketID}</strong>.</p>
-                    <p>We will review your request soon.</p>
-                    <p>Best regards,<br>Support Team</p>
-                </body>
+                    <body>
+                        <p>Dear {ticket.full_name},</p>
+                        <p>Your ticket ID is <strong>{ticket.TicketID}</strong>.</p>
+                        <p>We will review your request soon.</p>
+                        <p>Best regards,<br>Support Team</p>
+                    </body>
                 </html>
                 """
             )
@@ -108,9 +115,16 @@ class TicketViewSet(viewsets.ModelViewSet):
             api_response = api_instance.send_transac_email(send_smtp_email)
             logger.info(f"Confirmation email sent successfully for ticket {ticket.TicketID}")
             logger.debug(f"Email API response: {api_response}")
-            
+        
         except ApiException as e:
-            logger.error(f"Failed to send confirmation email for ticket {ticket.TicketID}: {str(e)}", exc_info=True)
+            error_body = str(e.body.decode()) if hasattr(e, 'body') else str(e)
+            logger.error(f"Failed to send confirmation email for ticket {ticket.TicketID}. "
+                        f"Status: {getattr(e, 'status', 'N/A')}, "
+                        f"Reason: {getattr(e, 'reason', 'N/A')}, "
+                        f"Body: {error_body}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error sending confirmation email for ticket {ticket.TicketID}: {str(e)}", exc_info=True)
             raise
 
     def get_permissions(self):
@@ -130,7 +144,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             original_data = TicketSerializer(ticket).data
             logger.debug(f"Original ticket data: {original_data}")
 
-            # Create a new request data dict without the screenshot
+            # Remove screenshot from update request data
             request_data = request.data.copy()
             if 'screenshot' in request_data:
                 logger.debug("Removing screenshot from update request")
