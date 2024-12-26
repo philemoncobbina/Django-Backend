@@ -1,23 +1,8 @@
-
 # Environment files
 .env
 
 # Ignore database file
 db.sqlite3
-
-# Ignore migration files that shouldn't be versioned
-*.log
-*.pot
-*.pyc
-*.pyo
-_pycache_
-
-media/screenshots/pexels-tima-miroshnichenko-5453808_VSs1JsR.jpg
-media/screenshots/pexels-tima-miroshnichenko-5453808_usfO4cl.jpg
-# Environment files
-.env
-
-# Ignore database file
 *.sqlite3
 
 # Ignore migration files that shouldn't be versioned
@@ -37,4 +22,7 @@ env/
 *.bak
 *.swp
 
+# Ignore specific images in media/screenshots
+media/screenshots/pexels-tima-miroshnichenko-5453808_VSs1JsR.jpg
+media/screenshots/pexels-tima-miroshnichenko-5453808_usfO4cl.jpg
 media/screenshots/*.jpg
