@@ -1,0 +1,16 @@
+
+# Environment files
+.env
+
+# Ignore database file
+db.sqlite3
+
+# Ignore migration files that shouldn't be versioned
+*.log
+*.pot
+*.pyc
+*.pyo
+_pycache_
+
+media/screenshots/pexels-tima-miroshnichenko-5453808_VSs1JsR.jpg
+media/screenshots/pexels-tima-miroshnichenko-5453808_usfO4cl.jpg
