@@ -173,7 +173,7 @@ class VerifyEmailView(APIView):
         user = get_object_or_404(User, id=user_id)
 
         if user.is_active:
-            return redirect('https://plvcmonline.uk/dashboard')  # Redirect to the dashboard if already verified
+            return redirect('https://plvcmonline.uk/login')  # Redirect to the dashboard if already verified
 
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
@@ -189,7 +189,7 @@ class VerifyEmailView(APIView):
             user.is_active = True
             user.save()
 
-            return redirect('https://plvcmonline.uk/dashboard')  # Redirect to the dashboard after successful verification
+            return redirect('https://plvcmonline.uk/login')  # Redirect to the dashboard after successful verification
 
         except jwt.ExpiredSignatureError:
             logger.error("Activation link has expired.")
@@ -487,6 +487,9 @@ class LoginView(APIView):
 
         if user.is_blocked:
             return Response({'error': 'Your account has been blocked.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.is_google_account:
+            return Response({'error': 'Your account was created with google. Please login with your google account'}, status=status.HTTP_403_FORBIDDEN)
 
         if not user.is_active:
             return Response({'error': 'Account not verified.'}, status=status.HTTP_401_UNAUTHORIZED)
