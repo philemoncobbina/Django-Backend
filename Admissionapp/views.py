@@ -6,98 +6,198 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import action
 from django.forms.models import model_to_dict
 from django.db.models import Max
+from sib_api_v3_sdk import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
+from sib_api_v3_sdk.rest import ApiException
+import os
+import threading
+from django.template.loader import render_to_string
+from django.conf import settings
+import logging
 
+logger = logging.getLogger(__name__)
+
+class EmailThread(threading.Thread):
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+        super().__init__()
+
+    def run(self):
+        try:
+            self.func(*self.args, **self.kwargs)
+        except Exception as e:
+            logger.error(f"Error in email thread: {str(e)}")
 
 class AdmissionViewSet(viewsets.ModelViewSet):
     serializer_class = AdmissionSerializer
 
     def get_queryset(self):
-        return Admission.objects.all()  # Default to all admissions for list action
+        return Admission.objects.all()
+
+    def _get_api_instance(self):
+        configuration = Configuration()
+        configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
+        return TransactionalEmailsApi(ApiClient(configuration))
+
+    def send_admission_confirmation_email(self, admission):
+        api_instance = self._get_api_instance()
+        
+        html_content = render_to_string('email/admission_confirmation.html', {
+            'admission_number': admission.admission_number
+        })
+        
+        send_smtp_email = SendSmtpEmail(
+            to=[{"email": admission.user_email}],
+            sender={"name": "Admissions Office", "email": settings.DEFAULT_FROM_EMAIL},
+            subject="Admission Application Received",
+            html_content=html_content
+        )
+
+        try:
+            api_response = api_instance.send_transac_email(send_smtp_email)
+            logger.info(f"Confirmation email sent successfully for admission {admission.admission_number}")
+        except ApiException as e:
+            logger.error(f"Exception when sending confirmation email: {str(e)}")
+            
+    def send_approval_email(self, admission):
+        api_instance = self._get_api_instance()
+        
+        html_content = render_to_string('email/admission_approval.html', {
+            'admission_number': admission.admission_number
+        })
+        
+        send_smtp_email = SendSmtpEmail(
+            to=[{"email": admission.user_email}],
+            sender={"name": "Admissions Office", "email": settings.DEFAULT_FROM_EMAIL},
+            subject="Admission Application Approved",
+            html_content=html_content
+        )
+
+        try:
+            api_response = api_instance.send_transac_email(send_smtp_email)
+            logger.info(f"Approval email sent successfully for admission {admission.admission_number}")
+        except ApiException as e:
+            logger.error(f"Exception when sending approval email: {str(e)}")
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my_admissions(self, request):
-        """
-        Fetch admissions for the authenticated user.
-        """
+        """Fetch admissions for the authenticated user."""
         admissions = Admission.objects.filter(user=request.user)
         serializer = self.get_serializer(admissions, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def all_admissions(self, request):
-        """
-        Fetch all admissions for all users.
-        """
+        """Fetch all admissions for all users."""
         admissions = self.get_queryset()
         serializer = self.get_serializer(admissions, many=True)
         return Response(serializer.data)
 
     def create(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        # Generate a unique admission number
-        admission_number = self.generate_admission_number()
+            admission_number = self.generate_admission_number()
+            
+            admission = serializer.save(
+                admission_number=admission_number,
+                user=request.user,
+                user_email=request.user.email if request.user.is_authenticated else None
+            )
 
-        # Save the admission with the generated admission number
-        admission = serializer.save(
-            admission_number=admission_number,
-            user=request.user,
-            user_email=request.user.email if request.user.is_authenticated else "Anonymous"
-        )
-
-        return Response({'detail': 'Your application has been submitted successfully!', 'data': serializer.data}, status=status.HTTP_201_CREATED)
-    
-    
-    def generate_admission_number(self):
-        """
-        Generate a unique admission number in the format RCS000001, RCS000002, etc.
-        """
-        last_admission = Admission.objects.aggregate(Max('admission_number'))
-        last_number = last_admission['admission_number__max']
-
-        if last_number:
-            # Extract the numeric part of the last admission number and increment it
-            new_number = int(last_number[3:]) + 1
-        else:
-            # If no admission exists, start with 1
-            new_number = 1
-
-        # Format the number with leading zeros, e.g., RCS000001
-        return f"RCS{new_number:06d}"
+            # Start email thread
+            EmailThread(
+                self.send_admission_confirmation_email,
+                admission
+            ).start()
+            
+            return Response({
+                'detail': 'Your application has been submitted successfully!',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error creating admission: {str(e)}")
+            return Response(
+                {'error': 'Failed to process your application. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def update(self, request, pk=None):
-        admission = self.get_object()
-        original_data = model_to_dict(admission)  # Convert model instance to dict to capture original data
+        try:
+            admission = self.get_object()
+            original_data = model_to_dict(admission)
 
-        serializer = self.get_serializer(admission, data=request.data, partial=False)
-        serializer.is_valid(raise_exception=True)
-        updated_admission = serializer.save()
+            serializer = self.get_serializer(admission, data=request.data, partial=False)
+            serializer.is_valid(raise_exception=True)
+            updated_admission = serializer.save()
 
-        # Log changes
-        self.log_changes(original_data, updated_admission, request.user)
+            # Check if status was changed to approved
+            if 'status' in request.data and request.data['status'] == 'approved' and original_data['status'] != 'approved':
+                EmailThread(
+                    self.send_approval_email,
+                    updated_admission
+                ).start()
 
-        return Response(serializer.data)
+            # Log changes
+            self.log_changes(original_data, updated_admission, request.user)
+
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Error updating admission: {str(e)}")
+            return Response(
+                {'error': 'Failed to update admission. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def partial_update(self, request, pk=None):
-        admission = self.get_object()
-        original_data = model_to_dict(admission)  # Convert model instance to dict to capture original data
+        try:
+            admission = self.get_object()
+            original_data = model_to_dict(admission)
 
-        serializer = self.get_serializer(admission, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        updated_admission = serializer.save()
+            serializer = self.get_serializer(admission, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            updated_admission = serializer.save()
 
-        # Log changes
-        self.log_changes(original_data, updated_admission, request.user)
+            # Check if status was changed to approved
+            if 'status' in request.data and request.data['status'] == 'approved' and original_data['status'] != 'approved':
+                EmailThread(
+                    self.send_approval_email,
+                    updated_admission
+                ).start()
 
-        return Response(serializer.data)
+            # Log changes
+            self.log_changes(original_data, updated_admission, request.user)
 
-    # Define log_changes to compare the original and updated data
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Error updating admission: {str(e)}")
+            return Response(
+                {'error': 'Failed to update admission. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def generate_admission_number(self):
+        try:
+            last_admission = Admission.objects.aggregate(Max('admission_number'))
+            last_number = last_admission['admission_number__max']
+
+            if last_number:
+                new_number = int(last_number[3:]) + 1
+            else:
+                new_number = 1
+
+            return f"RCS{new_number:06d}"
+        except Exception as e:
+            logger.error(f"Error generating admission number: {str(e)}")
+            raise
+
     def log_changes(self, original_data, updated_admission, user):
-        """
-        Log the changes made to the admission inquiry.
-        """
-        updated_data = model_to_dict(updated_admission)  # Convert updated model instance to dict
+        updated_data = model_to_dict(updated_admission)
         changed_fields = self.get_changed_fields(original_data, updated_data)
         if changed_fields:
             AdmissionLog.objects.create(
@@ -107,17 +207,13 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 changed_fields=changed_fields
             )
 
-    # Define get_changed_fields to detect differences between original and updated data
     def get_changed_fields(self, original_data, updated_data):
-        """
-        Compare original and updated data and return a list of fields that changed.
-        """
         changed_fields = []
         for key, original_value in original_data.items():
             updated_value = updated_data.get(key)
             if original_value != updated_value:
                 changed_fields.append(f"{key}: {original_value} -> {updated_value}")
-        return ', '.join(changed_fields)  # Return a string representation of the changes
+        return ', '.join(changed_fields)
 
     def get_permissions(self):
         if self.action in ['update', 'partial_update']:
