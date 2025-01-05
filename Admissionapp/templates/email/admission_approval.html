@@ -1,37 +1,3 @@
-<!-- <html>
-<head></head>
-<body>
-    <div class="header">
-        <h1>Congratulations!</h1>
-    </div>
-    <div class="content">
-        <p>Dear Applicant,</p>
-        <p>We are pleased to inform you that your admission application has been <span class="success-badge">APPROVED</span></p>
-        <div class="next-steps">
-            <h2>Next Steps:</h2>
-            <ol>
-                <li>Accept your admission offer</li>
-                <li>Complete the enrollment process</li>
-                <li>Pay any required fees</li>
-                <li>Attend the orientation program</li>
-            </ol>
-        </div>
-        <p>Your admission details:</p>
-        <ul>
-            <li><strong>Admission Number:</strong> {{ admission_number }}</li>
-            <li><strong>Program:</strong> {{ program }}</li>
-        </ul>
-        <a href="/accept-admission/{{ admission_number }}" class="button">Accept Admission</a>
-        <p>Please complete your enrollment process within the next 14 days to secure your place.</p>
-        <p>Welcome to our institution!</p>
-    </div>
-    <div class="footer">
-        <p>This is an automated message, please do not reply to this email.</p>
-        <p>&copy; Admissions Office</p>
-    </div>
-</body>
-</html> -->
-
 <html>
     <head>
         <style>
@@ -108,11 +74,11 @@
             
             <p>Your admission details:</p>
             <ul>
-                <li><strong>Admission Number:</strong> {admission.admission_number}</li>
-                <li><strong>Program:</strong> 'Your Selected Program'</li>
+                <li><strong>Admission Number:</strong> {{ admission_number }}</li>
+                
             </ul>
             
-            <a href="g" class="button">Accept Admission</a>
+            <a href="https://plvcmonline.uk/dashboard" class="button">Track Your Application</a>
             
             <p>Please complete your enrollment process within the next 14 days to secure your place.</p>
             
