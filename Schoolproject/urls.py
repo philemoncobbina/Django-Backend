@@ -9,7 +9,8 @@ urlpatterns = [
     path('api/', include('authapp.urls')),  # Include your app's URLs
     path('api/', include('Schoolapp.urls')),
     path('api/', include('Admissionapp.urls')),
-    path('api/', include('job_application.urls')),  # Include job_application app's URLs
+    path('api/', include('jobapplication.urls')),
+    path('api/', include('jobposting.urls')),  # Include job_application app's URLs
     path('api/', include('momo_pay.urls')),
     path('api/', include('hubtel.urls')),
     path('api/', include('Reservationapp.urls')),
