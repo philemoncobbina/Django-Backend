@@ -7,4 +7,4 @@ class JobApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobApplication
         fields = '__all__'  # Corrected the syntax for including all fields
-        read_only_fields = ['status', 'applied_at']  # Corrected the syntax for read-only fields
+        read_only_fields = ['applied_at']  # Corrected the syntax for read-only fields

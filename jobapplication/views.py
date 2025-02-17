@@ -14,16 +14,10 @@ class ApplyToJobView(generics.CreateAPIView):
     permission_classes = []  # Allow unauthenticated users
     
     def perform_create(self, serializer):
-        # Save the job application
         job_application = serializer.save()
-        
-        # Send confirmation email to the applicant
         self.send_confirmation_email(job_application)
     
     def send_confirmation_email(self, job_application):
-        """
-        Sends a confirmation email to the applicant after successful job application.
-        """
         configuration = Configuration()
         configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
         
@@ -46,10 +40,9 @@ class ApplyToJobView(generics.CreateAPIView):
         )
         
         try:
-            api_response = api_instance.send_transac_email(send_smtp_email)
-            print("Email sent successfully: %s\n" % api_response)
+            api_instance.send_transac_email(send_smtp_email)
         except ApiException as e:
-            print("Exception when sending email: %s\n" % e)
+            print(f"Exception when sending email: {e}")
 
 class JobApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = JobApplication.objects.all()
@@ -57,6 +50,17 @@ class JobApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
     
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        
+        if not serializer.is_valid():
+            print("Validation Errors:", serializer.errors)  # Debugging
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
