@@ -58,4 +58,14 @@ class JobApplication(models.Model):
             self.job_title = self.job_post.title
         if not self.job_reference_number:
             self.job_reference_number = self.job_post.reference_number
+
         super().save(*args, **kwargs)
+
+        # Update application count on JobPost
+        self.job_post.update_application_count()
+    
+    def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)
+
+        # Update application count on JobPost after deletion
+        self.job_post.update_application_count()

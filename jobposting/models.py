@@ -1,6 +1,6 @@
 from django.db import models
 from django.utils import timezone
-from django.db.models import Max
+from django.db.models import Max, Count
 from authapp.models import CustomUser
 
 class JobPost(models.Model):
@@ -10,12 +10,11 @@ class JobPost(models.Model):
         ('PUBLISHED', 'Published'),
     ]
     
-    # Modified reference number field to allow null initially
     reference_number = models.CharField(
         max_length=8,
         unique=True,
-        null=True,  # Allow null initially
-        blank=True,  # Allow blank initially
+        null=True,
+        blank=True,
         editable=False
     )
     
@@ -30,7 +29,6 @@ class JobPost(models.Model):
         default='DRAFT'
     )
     
-    # User relationship
     created_by = models.ForeignKey(
         CustomUser,
         on_delete=models.SET_NULL,
@@ -38,15 +36,16 @@ class JobPost(models.Model):
         blank=True,
         related_name="job_posts"
     )
-    # New field to store user email
     created_by_email = models.EmailField(max_length=254, null=True, blank=True)
     
-    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     scheduled_date = models.DateTimeField(null=True, blank=True)
     published_date = models.DateTimeField(null=True, blank=True)
-    
+
+    # New field to store the number of applicants
+    applications_count = models.PositiveIntegerField(default=0)
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Job Post'
@@ -54,7 +53,7 @@ class JobPost(models.Model):
     
     def save(self, *args, **kwargs):
         if not self.reference_number:
-            last_ref_num = JobPost.objects.all().aggregate(Max('reference_number'))['reference_number__max']
+            last_ref_num = JobPost.objects.aggregate(Max('reference_number'))['reference_number__max']
             if last_ref_num:
                 try:
                     last_num = int(last_ref_num[2:])
@@ -65,25 +64,15 @@ class JobPost(models.Model):
                 new_num = 1
             self.reference_number = f'RF{new_num:06d}'
         
-        # Save creator's email
         if self.created_by and not self.created_by_email:
             self.created_by_email = self.created_by.email
             
         super().save(*args, **kwargs)
+
+    def update_application_count(self):
+        """Update the count of job applications for this job post."""
+        self.applications_count = self.applications.count()
+        self.save(update_fields=['applications_count'])
     
     def __str__(self):
         return f"{self.reference_number or 'No Reference'} - {self.title}"
-    
-    def is_published(self):
-        """Check if the job post is published"""
-        return self.status == 'PUBLISHED'
-    
-    def is_scheduled(self):
-        """Check if the job post is scheduled"""
-        return self.status == 'SCHEDULED'
-    
-    def can_be_published(self):
-        """Check if the job post can be published"""
-        if self.status == 'SCHEDULED' and self.scheduled_date:
-            return timezone.now() >= self.scheduled_date
-        return self.status == 'DRAFT'

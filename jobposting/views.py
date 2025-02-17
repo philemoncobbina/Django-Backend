@@ -27,7 +27,7 @@ class JobPostViewSet(viewsets.ModelViewSet):
         - Public listings, get_published_post, and list_published_posts are accessible to anyone
         - Other actions require authentication
         """
-        if self.action in ['public_listings', 'get_published_post', 'list_published_posts']:
+        if self.action in ['public_listings', 'get_published_post', 'list_published_posts', 'get_applications_count']:
             permission_classes = [permissions.AllowAny]
         else:
             permission_classes = [permissions.IsAuthenticated]
@@ -262,5 +262,29 @@ class JobPostViewSet(viewsets.ModelViewSet):
             logger.error(f"Error retrieving PUBLISHED posts: {str(e)}")
             return Response(
                 {"error": "An error occurred while fetching job posts."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR   
+            )
+
+    @action(detail=True, methods=['get'])
+    def get_applications_count(self, request, pk=None):
+        """
+        Get the number of applications received for a specific job post.
+        URL: /api/jobposts/{id}/get_applications_count/
+        """
+        try:
+            job_post = get_object_or_404(JobPost, id=pk)
+            logger.debug(f"Retrieving applications count for job post: {job_post.id}")
+            
+            # Return the applications_count field from the JobPost model
+            return Response({
+                "job_post_id": job_post.id,
+                "job_post_title": job_post.title,
+                "applications_count": job_post.applications_count
+            })
+        
+        except Exception as e:
+            logger.error(f"Error retrieving applications count: {str(e)}")
+            return Response(
+                {"error": "An error occurred while fetching the applications count."}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
