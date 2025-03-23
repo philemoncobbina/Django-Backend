@@ -68,6 +68,51 @@ class ReservationViewSet(viewsets.ModelViewSet):
         except ApiException as e:
             print("Exception when sending email: %s\n" % e)
 
+    def send_status_confirmation_email(self, reservation):
+        """
+        Send email notification when reservation status is changed to 'Confirmed'
+        """
+        configuration = Configuration()
+        configuration.api_key['api-key'] = os.getenv('BREVO_API_KEY')
+        
+        api_instance = TransactionalEmailsApi(ApiClient(configuration))
+        
+        send_smtp_email = SendSmtpEmail(
+            to=[{"email": reservation.email}],
+            sender={"name": "Your Company", "email": settings.DEFAULT_FROM_EMAIL},
+            subject="Your Reservation Has Been Confirmed",
+            html_content=f"""
+            <html>
+            <body>
+                <h2>Reservation Confirmation</h2>
+                <p>Dear {reservation.full_name},</p>
+                <p>We are pleased to inform you that your reservation has been <strong>confirmed</strong>.</p>
+                
+                <h3>Appointment Details:</h3>
+                <ul>
+                    <li><strong>Date:</strong> {reservation.booking_date.strftime('%A, %B %d, %Y')}</li>
+                    <li><strong>Time:</strong> {reservation.booking_time.strftime('%I:%M %p')}</li>
+                    <li><strong>Department:</strong> {reservation.department}</li>
+                    <li><strong>Reason for Visit:</strong> {reservation.reason}</li>
+                    <li><strong>Reference Number:</strong> {reservation.id}</li>
+                </ul>
+                
+                <p>Please arrive 10 minutes before your scheduled appointment time.</p>
+                <p>If you need to cancel or reschedule, please contact us at least 24 hours in advance.</p>
+                
+                <p>Thank you for choosing our services!</p>
+                <p>Best regards,<br>Your Company</p>
+            </body>
+            </html>
+            """
+        )
+
+        try:
+            api_response = api_instance.send_transac_email(send_smtp_email)
+            print("Status confirmation email sent successfully: %s\n" % api_response)
+        except ApiException as e:
+            print("Exception when sending status confirmation email: %s\n" % e)
+
     def is_within_business_hours(self, booking_date, booking_time):
         """
         Validate that the reservation is on a weekday and within business hours (9 AM to 4 PM).
@@ -111,8 +156,9 @@ class ReservationViewSet(viewsets.ModelViewSet):
         booking_date = serializer.validated_data.get('booking_date', reservation.booking_date)
         booking_time = serializer.validated_data.get('booking_time', reservation.booking_time)
         department = serializer.validated_data.get('department', reservation.department)
+        new_status = serializer.validated_data.get('status', reservation.status)
 
-        print(f"Validated booking date: {booking_date}, booking time: {booking_time}, department: {department}")
+        print(f"Validated booking date: {booking_date}, booking time: {booking_time}, department: {department}, status: {new_status}")
 
         if not self.is_within_business_hours(booking_date, booking_time):
             print("Booking not within business hours or not a weekday")
@@ -127,7 +173,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
         print("No conflicts found, proceeding with update")
         reservation.last_modified_by = request.user
-        serializer.save()
+        updated_reservation = serializer.save()
         print(f"Reservation updated: {serializer.data}")
 
         # Track changes
@@ -142,6 +188,11 @@ class ReservationViewSet(viewsets.ModelViewSet):
             changed_fields=changed_fields
         )
         print("ReservationLog created")
+        
+        # Check if status was changed to 'Confirmed' and send confirmation email
+        if new_status == 'Confirmed' and original_data.get('status') != 'Confirmed':
+            print("Status changed to Confirmed, sending confirmation email")
+            self.send_status_confirmation_email(updated_reservation)
         
         print("Update process completed successfully")
         return Response(serializer.data)
@@ -164,8 +215,9 @@ class ReservationViewSet(viewsets.ModelViewSet):
         booking_date = serializer.validated_data.get('booking_date', reservation.booking_date)
         booking_time = serializer.validated_data.get('booking_time', reservation.booking_time)
         department = serializer.validated_data.get('department', reservation.department)
+        new_status = serializer.validated_data.get('status', reservation.status)
 
-        print(f"Validated booking date: {booking_date}, booking time: {booking_time}, department: {department}")
+        print(f"Validated booking date: {booking_date}, booking time: {booking_time}, department: {department}, status: {new_status}")
 
         if not self.is_within_business_hours(booking_date, booking_time):
             print("Booking not within business hours or not a weekday")
@@ -180,7 +232,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
         print("No conflicts found, proceeding with partial update")
         reservation.last_modified_by = request.user
-        serializer.save()
+        updated_reservation = serializer.save()
         print(f"Reservation partially updated: {serializer.data}")
 
         # Track changes
@@ -198,6 +250,10 @@ class ReservationViewSet(viewsets.ModelViewSet):
         # Example log output inside the update/partial_update method:
         print(f"ReservationLog created for {request.user.email}")
 
+        # Check if status was changed to 'Confirmed' and send confirmation email
+        if new_status == 'Confirmed' and original_data.get('status') != 'Confirmed':
+            print("Status changed to Confirmed, sending confirmation email")
+            self.send_status_confirmation_email(updated_reservation)
 
         print("Partial update process completed successfully")
         return Response(serializer.data)
