@@ -178,16 +178,39 @@ class TicketViewSet(viewsets.ModelViewSet):
     def get_changed_fields(self, original_data, updated_data):
         try:
             changed_fields = []
+            # Fields to exclude from comparison
+            exclude_fields = ['updated_at', 'last_modified_by']
+            
+            # Special handling for screenshot field
+            if 'screenshot' in original_data and 'screenshot' in updated_data:
+                original_screenshot = original_data['screenshot']
+                updated_screenshot = updated_data['screenshot']
+                
+                # Extract just the filename for comparison
+                if original_screenshot and updated_screenshot:
+                    original_filename = original_screenshot.split('/')[-1]
+                    updated_filename = updated_screenshot.split('/')[-1]
+                    
+                    # Only consider screenshot changed if the actual filename changed
+                    if original_filename != updated_filename:
+                        changed_fields.append(f"screenshot: {original_screenshot} -> {updated_screenshot}")
+                        logger.debug(f"Field 'screenshot' changed from '{original_screenshot}' to '{updated_screenshot}'")
+            
+            # Compare all other fields
             for key, original_value in original_data.items():
+                # Skip screenshot (already handled) and excluded fields
+                if key == 'screenshot' or key in exclude_fields:
+                    continue
+                    
                 updated_value = updated_data.get(key)
                 if original_value != updated_value:
                     changed_fields.append(f"{key}: {original_value} -> {updated_value}")
                     logger.debug(f"Field '{key}' changed from '{original_value}' to '{updated_value}'")
+                    
             return ', '.join(changed_fields)
         except Exception as e:
             logger.error(f"Error comparing changed fields: {str(e)}", exc_info=True)
             raise
-
 
 class TicketLogListView(generics.ListAPIView):
     serializer_class = TicketLogSerializer

@@ -119,7 +119,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Configure SimpleJWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=111),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,  # Make sure to keep this secret

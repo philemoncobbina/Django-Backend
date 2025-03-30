@@ -76,3 +76,20 @@ class JobPost(models.Model):
     
     def __str__(self):
         return f"{self.reference_number or 'No Reference'} - {self.title}"
+
+class JobPostLog(models.Model):
+    job_post = models.ForeignKey(JobPost, on_delete=models.CASCADE, related_name='logs')
+    user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True)
+    user_email = models.EmailField(max_length=255, blank=True)
+    changed_fields = models.TextField()  # Store the fields that were changed
+    timestamp = models.DateTimeField(auto_now_add=True)
+    action_type = models.CharField(max_length=50, choices=[
+        ('CREATE', 'Create'),
+        ('UPDATE', 'Update'),
+        ('STATUS_CHANGE', 'Status Change'),
+        ('PUBLISH', 'Publish'),
+        ('SCHEDULE', 'Schedule')
+    ])
+
+    def __str__(self):
+        return f"Log for JobPost {self.job_post.reference_number} by {self.user_email} at {self.timestamp}"

@@ -5,9 +5,11 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from django.db.models import Q
+from rest_framework import generics
 from django.shortcuts import get_object_or_404
-from .models import JobPost
-from .serializers import JobPostSerializer
+from django.forms.models import model_to_dict
+from .models import JobPost, JobPostLog
+from .serializers import JobPostSerializer, JobPostLogSerializer
 from datetime import datetime
 import pytz
 
@@ -20,6 +22,30 @@ class JobPostViewSet(viewsets.ModelViewSet):
     """
     queryset = JobPost.objects.all()
     serializer_class = JobPostSerializer
+
+    def _log_job_post_changes(self, job_post, user, action_type, original_data=None):
+        """
+        Create a log entry for job post changes
+        """
+        try:
+            # If it's an update, find changed fields
+            changed_fields = []
+            if original_data:
+                current_data = model_to_dict(job_post)
+                for key, original_value in original_data.items():
+                    current_value = current_data.get(key)
+                    if str(original_value) != str(current_value):
+                        changed_fields.append(f"{key}: {original_value} -> {current_value}")
+
+            JobPostLog.objects.create(
+                job_post=job_post,
+                user=user,
+                user_email=user.email if user else "Anonymous",
+                changed_fields=', '.join(changed_fields) if changed_fields else "Initial creation",
+                action_type=action_type
+            )
+        except Exception as e:
+            logger.error(f"Error creating job post log: {str(e)}")
 
     def get_permissions(self):
         """
@@ -139,6 +165,13 @@ class JobPostViewSet(viewsets.ModelViewSet):
             instance.created_by_email = request.user.email
             instance.save()
             
+            # Log the creation
+            self._log_job_post_changes(
+                job_post=instance, 
+                user=request.user, 
+                action_type='CREATE'
+            )
+            
             logger.info(f"Successfully created job post: {instance.reference_number}")
             
             # Refresh serializer data to include reference number
@@ -155,14 +188,74 @@ class JobPostViewSet(viewsets.ModelViewSet):
             logger.error(f"Error creating job post: {str(e)}")
             raise
 
+    def update(self, request, *args, **kwargs):
+        """
+        Update a job post with comprehensive logging.
+        """
+        try:
+            # Get original data before update
+            instance = self.get_object()
+            original_data = model_to_dict(instance)
+
+            # Perform update
+            serializer = self.get_serializer(instance, data=request.data, partial=False)
+            serializer.is_valid(raise_exception=True)
+            updated_instance = serializer.save()
+
+            # Log the changes
+            self._log_job_post_changes(
+                job_post=updated_instance, 
+                user=request.user, 
+                action_type='UPDATE',
+                original_data=original_data
+            )
+
+            logger.info(f"Updated job post: {updated_instance.reference_number}")
+
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error updating job post: {str(e)}")
+            raise
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Partially update a job post with comprehensive logging.
+        """
+        try:
+            # Get original data before update
+            instance = self.get_object()
+            original_data = model_to_dict(instance)
+
+            # Perform partial update
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            updated_instance = serializer.save()
+
+            # Log the changes
+            self._log_job_post_changes(
+                job_post=updated_instance, 
+                user=request.user, 
+                action_type='UPDATE',
+                original_data=original_data
+            )
+
+            logger.info(f"Partially updated job post: {updated_instance.reference_number}")
+
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error partially updating job post: {str(e)}")
+            raise
+
     @action(detail=True, methods=['post'])
     def publish(self, request, pk=None):
         """
-        Immediately publish a job post.
+        Immediately publish a job post with logging.
         """
         try:
             job = self.get_object()
-            logger.info(f"Publishing job post: {job.id}")
+            original_status = job.status
 
             if job.status not in ['DRAFT', 'SCHEDULED']:
                 logger.warning(f"Invalid publish attempt for job {job.id} with status {job.status}")
@@ -173,7 +266,15 @@ class JobPostViewSet(viewsets.ModelViewSet):
             job.scheduled_date = None
             job.save()
             
-            logger.info(f"Successfully published job post: {job.id}")
+            # Log status change
+            self._log_job_post_changes(
+                job_post=job, 
+                user=request.user, 
+                action_type='PUBLISH',
+                original_data={'status': original_status}
+            )
+            
+            logger.info(f"Published job post: {job.reference_number}")
             
             serializer = self.serializer_class(job)
             return Response(serializer.data)
@@ -185,10 +286,11 @@ class JobPostViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def schedule(self, request, pk=None):
         """
-        Schedule a job post for future publication.
+        Schedule a job post for future publication with logging.
         """
         try:
             job = self.get_object()
+            original_status = job.status
             scheduled_date = request.data.get('scheduled_date')
             
             logger.info(f"Scheduling job post {job.id} for publication at {scheduled_date}")
@@ -204,7 +306,15 @@ class JobPostViewSet(viewsets.ModelViewSet):
             job.published_date = None
             job.save()
             
-            logger.info(f"Successfully scheduled job post {job.id} for {validated_date}")
+            # Log status change
+            self._log_job_post_changes(
+                job_post=job, 
+                user=request.user, 
+                action_type='SCHEDULE',
+                original_data={'status': original_status}
+            )
+            
+            logger.info(f"Successfully scheduled job post {job.reference_number} for {validated_date}")
             
             serializer = self.serializer_class(job)
             return Response(serializer.data)
@@ -288,3 +398,23 @@ class JobPostViewSet(viewsets.ModelViewSet):
                 {"error": "An error occurred while fetching the applications count."}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class JobPostLogListView(generics.ListAPIView):
+    """
+    API view to retrieve logs for a specific job post.
+    URL: /api/jobposts/{job_post_id}/logs/
+    """
+    serializer_class = JobPostLogSerializer
+    
+    def get_queryset(self):
+        job_post_id = self.kwargs.get('job_post_id')
+        logger.debug(f"Retrieving logs for job post: {job_post_id}")
+        return JobPostLog.objects.filter(job_post_id=job_post_id).order_by('-timestamp')
+
+    def get_permissions(self):
+        """
+        Only authenticated users can view logs
+        """
+        permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]

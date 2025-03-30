@@ -93,8 +93,8 @@ class ReservationViewSet(viewsets.ModelViewSet):
                     <li><strong>Date:</strong> {reservation.booking_date.strftime('%A, %B %d, %Y')}</li>
                     <li><strong>Time:</strong> {reservation.booking_time.strftime('%I:%M %p')}</li>
                     <li><strong>Department:</strong> {reservation.department}</li>
-                    <li><strong>Reason for Visit:</strong> {reservation.reason}</li>
-                    <li><strong>Reference Number:</strong> {reservation.id}</li>
+                    
+                    
                 </ul>
                 
                 <p>Please arrive 10 minutes before your scheduled appointment time.</p>

@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import JobApplication
-from .serializers import JobApplicationSerializer
+from .models import JobApplication, JobApplicationLog
+from .serializers import JobApplicationSerializer, JobApplicationLogSerializer
 from sib_api_v3_sdk import Configuration, ApiClient, SendSmtpEmail
 from sib_api_v3_sdk.api.transactional_emails_api import TransactionalEmailsApi
 from django.conf import settings
@@ -9,6 +9,7 @@ from sib_api_v3_sdk.rest import ApiException
 from rest_framework.exceptions import ValidationError
 import os
 from rest_framework import serializers
+from rest_framework.decorators import action
 
 class ApplyToJobView(generics.CreateAPIView):
     queryset = JobApplication.objects.all()
@@ -20,6 +21,24 @@ class ApplyToJobView(generics.CreateAPIView):
         try:
             serializer.is_valid(raise_exception=True)
             job_application = self.perform_create(serializer)
+            
+            # Log creation (no need to compare fields since it's a new entry)
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                JobApplicationLog.objects.create(
+                    application=job_application,
+                    user=request.user,
+                    user_email=request.user.email if request.user.email else "anonymous@system.com",
+                    changed_fields="Initial application created"
+                )
+                print(f"JobApplicationLog created for new application by {request.user.email}")
+            else:
+                # For non-authenticated users (public applications)
+                JobApplicationLog.objects.create(
+                    application=job_application,
+                    user_email=job_application.email,
+                    changed_fields="Initial application created by applicant"
+                )
+                print(f"JobApplicationLog created for new application by applicant {job_application.email}")
             
             return Response({
                 "success": True,
@@ -122,22 +141,141 @@ class JobApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'id'
     
     def update(self, request, *args, **kwargs):
+        print("Starting update process for job application")
+        
         instance = self.get_object()
+        print(f"Fetched job application: {instance}")
+        
+        # Capture original data before update
+        original_data = JobApplicationSerializer(instance).data  
+        print(f"Original data: {original_data}")
+        
+        # Store original status for email logic
         original_status = instance.status
         
+        # Process update with partial=False for full update
+        serializer = self.get_serializer(instance, data=request.data, partial=False)
+        
+        if not serializer.is_valid():
+            print("Validation Errors:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Set last_modified_by to current user
+        instance.last_modified_by = request.user
+        updated_instance = serializer.save()
+        
+        # Get updated data after save
+        updated_data = serializer.data
+        print(f"Updated data: {updated_data}")
+        
+        # Track changes by comparing original and updated data
+        changed_fields = self._get_changed_fields(original_data, updated_data)
+        print(f"Changed fields: {changed_fields}")
+        
+        # Create log entry
+        JobApplicationLog.objects.create(
+            application=instance,
+            user=request.user,
+            user_email=request.user.email,
+            changed_fields=changed_fields
+        )
+        print(f"JobApplicationLog created for {request.user.email}")
+        
+        # Check if status was changed to REJECTED and send email
+        if original_status != 'REJECTED' and updated_instance.status == 'REJECTED':
+            print("Status changed to REJECTED, sending rejection email")
+            self._send_rejection_email(updated_instance)
+            
+        print("Update process completed successfully")
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def partial_update(self, request, *args, **kwargs):
+        print("Starting partial update process for job application")
+        
+        instance = self.get_object()
+        print(f"Fetched job application: {instance}")
+        
+        # Capture original data before update
+        original_data = JobApplicationSerializer(instance).data  
+        print(f"Original data: {original_data}")
+        
+        # Store original status for email logic
+        original_status = instance.status
+        
+        # Process update with partial=True
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         
         if not serializer.is_valid():
-            print("Validation Errors:", serializer.errors)  # Debugging
+            print("Validation Errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
+        # Set last_modified_by to current user
+        instance.last_modified_by = request.user
         updated_instance = serializer.save()
         
-        # Check if status was changed to REJECTED
+        # Get updated data after save
+        updated_data = serializer.data
+        print(f"Updated data: {updated_data}")
+        
+        # Track changes by comparing original and updated data
+        changed_fields = self._get_changed_fields(original_data, updated_data)
+        print(f"Changed fields: {changed_fields}")
+        
+        # Create log entry
+        JobApplicationLog.objects.create(
+            application=instance,
+            user=request.user,
+            user_email=request.user.email,
+            changed_fields=changed_fields
+        )
+        print(f"JobApplicationLog created for {request.user.email}")
+        
+        # Check if status was changed to REJECTED and send email
         if original_status != 'REJECTED' and updated_instance.status == 'REJECTED':
+            print("Status changed to REJECTED, sending rejection email")
             self._send_rejection_email(updated_instance)
             
+        print("Partial update process completed successfully")
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def _get_changed_fields(self, original_data, updated_data):
+        """
+        Compare original and updated data and return a string of fields that changed.
+        Format: "field1: old_value -> new_value, field2: old_value -> new_value"
+        """
+        print("Comparing original and updated data")
+        changed_fields = []
+        
+        # Fields to exclude from comparison
+        exclude_fields = ['updated_at', 'last_modified_by']
+        
+        # Special handling for resume field to avoid URL format differences
+        if 'resume' in original_data and 'resume' in updated_data:
+            original_resume = original_data['resume']
+            updated_resume = updated_data['resume']
+            
+            # Extract just the filename for comparison
+            if original_resume and updated_resume:
+                original_filename = original_resume.split('/')[-1]
+                updated_filename = updated_resume.split('/')[-1]
+                
+                # Only consider resume changed if the actual filename changed
+                if original_filename != updated_filename:
+                    changed_fields.append(f"resume: {original_resume} -> {updated_resume}")
+                    print(f"Field changed: resume from {original_resume} to {updated_resume}")
+        
+        # Compare all other fields
+        for key, original_value in original_data.items():
+            # Skip resume (already handled) and excluded fields
+            if key == 'resume' or key in exclude_fields:
+                continue
+                
+            updated_value = updated_data.get(key)
+            if original_value != updated_value:
+                changed_fields.append(f"{key}: {original_value} -> {updated_value}")
+                print(f"Field changed: {key} from {original_value} to {updated_value}")
+                    
+        return ', '.join(changed_fields)  # Return a string representation of the changes
 
     def _send_rejection_email(self, job_application):
         """Send rejection email using Brevo (formerly Sendinblue)"""
@@ -192,6 +330,16 @@ class JobApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        
+        # Log the deletion
+        JobApplicationLog.objects.create(
+            application=instance,
+            user=request.user,
+            user_email=request.user.email,
+            changed_fields="Application deleted"
+        )
+        print(f"JobApplicationLog created for deletion by {request.user.email}")
+        
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -201,3 +349,14 @@ class JobApplicationListView(generics.ListAPIView):
     
     def get_queryset(self):
         return JobApplication.objects.all()
+
+class JobApplicationLogListView(generics.ListAPIView):
+    """
+    View to retrieve logs for a specific job application
+    """
+    serializer_class = JobApplicationLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        application_id = self.kwargs['application_id']
+        return JobApplicationLog.objects.filter(application_id=application_id)
