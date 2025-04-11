@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     'tickets',
     'admin_auth',
     'hubtel',
+    'student_auth',
     'rest_framework.authtoken',
     'whitenoise.runserver_nostatic',
     

@@ -7,7 +7,7 @@ from authapp.models import CustomUser
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser  # Refers to the CustomUser from authapp
-        fields = ['id', 'first_name', 'last_name', 'email', 'role', 'is_active', 'is_blocked', 'last_login', 'date_joined']
+        fields = '__all__'
         extra_kwargs = {
             'password': {'write_only': True},
         }

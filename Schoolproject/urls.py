@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/', include('hubtel.urls')),
     path('api/', include('Reservationapp.urls')),
     path('api/', include('tickets.urls')),
+    path('api/', include('student_auth.urls')),
     path('api/', include('Subscriptions.urls')),
     path('api/', include('admin_auth.urls', namespace='admin_auth')),
 
